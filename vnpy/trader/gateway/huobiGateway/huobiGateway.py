@@ -3,8 +3,8 @@
 '''
 vn.sec的gateway接入
 '''
+from __future__ import print_function
 
-import os
 import json
 from datetime import datetime, timedelta
 from copy import copy
@@ -12,7 +12,7 @@ from math import pow
 
 from vnpy.api.huobi import TradeApi, DataApi
 from vnpy.trader.vtGateway import *
-from vnpy.trader.vtFunction import getJsonPath, getTempPath
+from vnpy.trader.vtFunction import getJsonPath
 
 
 # 委托状态类型映射
@@ -29,11 +29,9 @@ statusMapReverse['canceled'] = STATUS_CANCELLED
 #----------------------------------------------------------------------
 def print_dict(d):
     """"""
-    print '-' * 30
-    l = d.keys()
-    l.sort()
-    for k in l:
-        print '%s:%s' %(k, d[k])
+    print('-' * 30)
+    for key in sorted(d):
+        print('%s:%s' % (key, d[key]))
 
 
 ########################################################################
@@ -60,7 +58,7 @@ class HuobiGateway(VtGateway):
     def connect(self):
         """连接"""
         try:
-            f = file(self.filePath)
+            f = open(self.filePath)
         except IOError:
             log = VtLogData()
             log.gatewayName = self.gatewayName
@@ -75,8 +73,6 @@ class HuobiGateway(VtGateway):
             accessKey = str(setting['accessKey'])
             secretKey = str(setting['secretKey'])
             symbols = setting['symbols']
-            proxyHost = str(setting['proxyHost'])
-            proxyPort = int(setting['proxyPort'])
         except KeyError:
             log = VtLogData()
             log.gatewayName = self.gatewayName
@@ -85,8 +81,8 @@ class HuobiGateway(VtGateway):
             return
 
         # 创建行情和交易接口对象
-        self.dataApi.connect(exchange, proxyHost, proxyPort)
-        self.tradeApi.connect(exchange, accessKey, secretKey, symbols)
+        self.dataApi.connect(exchange, symbols)
+        self.tradeApi.connect(exchange, symbols, accessKey, secretKey)
 
         # 初始化并启动查询
         self.initQuery()
@@ -94,7 +90,8 @@ class HuobiGateway(VtGateway):
     #----------------------------------------------------------------------
     def subscribe(self, subscribeReq):
         """订阅行情"""
-        self.dataApi.subscribe(subscribeReq)
+        pass
+        #self.dataApi.subscribe(subscribeReq)
 
     #----------------------------------------------------------------------
     def sendOrder(self, orderReq):
@@ -179,38 +176,40 @@ class HuobiDataApi(DataApi):
 
         self.tickDict = {}
 
-        self.subscribeDict = {}
+        #self.subscribeDict = {}
 
     #----------------------------------------------------------------------
-    def connect(self, exchange, proxyHost, proxyPort):
+    def connect(self, exchange, symbols):
         """连接服务器"""
         if exchange == 'huobi':
             url = 'wss://api.huobi.pro/ws'
         else:
             url = 'wss://api.hadax.com/ws'
+            
+        self.symbols = symbols
 
-        if proxyHost:
-            self.connectionStatus = super(HuobiDataApi, self).connect(url, proxyHost, proxyPort)
-        else:
-            self.connectionStatus = super(HuobiDataApi, self).connect(url)
+        self.connectionStatus = super(HuobiDataApi, self).connect(url)
         self.gateway.mdConnected = True
 
         if self.connectionStatus:
             self.writeLog(u'行情服务器连接成功')
-
+            
+            for symbol in self.symbols:
+                self.subscribe(symbol)
             # 订阅所有之前订阅过的行情
-            for req in self.subscribeDict.values():
-                self.subscribe(req)
+            #for req in self.subscribeDict.values():
+            #    self.subscribe(req)
+            
 
     #----------------------------------------------------------------------
-    def subscribe(self, subscribeReq):
+    def subscribe(self, symbol):
         """订阅合约"""
-        self.subscribeDict[subscribeReq.symbol] = subscribeReq
+        #self.subscribeDict[subscribeReq.symbol] = subscribeReq
 
         if not self.connectionStatus:
             return
 
-        symbol = subscribeReq.symbol
+        #symbol = subscribeReq.symbol
         if symbol in self.tickDict:
             return
 
@@ -294,7 +293,7 @@ class HuobiDataApi(DataApi):
     #----------------------------------------------------------------------
     def onTradeDetail(self, data):
         """成交细节推送"""
-        print data
+        print(data)
 
     #----------------------------------------------------------------------
     def onMarketDetail(self, data):
@@ -354,7 +353,7 @@ class HuobiTradeApi(TradeApi):
         #self.activeOrderSet = set() # 活动委托集合
 
     #----------------------------------------------------------------------
-    def connect(self, exchange, accessKey, secretKey, symbols=''):
+    def connect(self, exchange, symbols, accessKey, secretKey):
         """初始化连接"""
         if not self.connectionStatus:
             self.symbols = symbols
@@ -451,6 +450,10 @@ class HuobiTradeApi(TradeApi):
     #----------------------------------------------------------------------
     def onError(self, msg, reqid):
         """错误回调"""
+        # 忽略请求超时错误
+        if '429' in msg or 'api-signature-not-valid' in msg:
+            return
+        
         err = VtErrorData()
         err.gatewayName = self.gatewayName
         err.errorID = 'Trade'
@@ -494,8 +497,9 @@ class HuobiTradeApi(TradeApi):
     def onGetAccounts(self, data, reqid):
         """查询账户回调"""
         for d in data:
-            self.accountid = str(d['id'])
-            self.writeLog(u'交易账户%s查询成功' %self.accountid)
+            if str(d['type']) == 'spot':
+                self.accountid = str(d['id'])
+                self.writeLog(u'交易账户%s查询成功' %self.accountid)
 
     #----------------------------------------------------------------------
     def onGetAccountBalance(self, data, reqid):
@@ -692,7 +696,7 @@ class HuobiTradeApi(TradeApi):
     #----------------------------------------------------------------------
     def onGetMatchResult(self, data, reqid):
         """查询单一成交回调"""
-        print reqid, data
+        print(reqid, data)
 
     #----------------------------------------------------------------------
     def onPlaceOrder(self, data, reqid):
@@ -716,4 +720,4 @@ class HuobiTradeApi(TradeApi):
     #----------------------------------------------------------------------
     def onBatchCancel(self, data, reqid):
         """批量撤单回调"""
-        print reqid, data
+        print(reqid, data)

@@ -182,10 +182,13 @@ class GatewayApi(BitfinexApi):
         self.start()
         self.writeLog(u'交易API启动成功')
         
-        for symbol in symbols:
+    #----------------------------------------------------------------------
+    def onConnect(self):
+        """"""
+        for symbol in self.symbols:
             self.subscribe(symbol, 'ticker')
             self.subscribe(symbol, 'book')
-        self.writeLog(u'行情推送订阅成功')
+        self.writeLog(u'行情推送订阅成功')             
         
         self.authenticate()
         self.writeLog(u'交易推送订阅成功')
@@ -350,11 +353,11 @@ class GatewayApi(BitfinexApi):
         
         # 常规行情更新
         if channel == 'ticker':
-            tick.volume = l[-3]
-            tick.highPrice = l[-2]
-            tick.lowPrice = l[-1]
-            tick.lastPrice = l[-4]
-            tick.openPrice = tick.lastPrice - l[4]
+            tick.volume = float(l[-3])
+            tick.highPrice = float(l[-2])
+            tick.lowPrice = float(l[-1])
+            tick.lastPrice = float(l[-4])
+            tick.openPrice = float(tick.lastPrice - l[4])
         # 深度报价更新
         elif channel == 'book':
             bid = self.bidDict.setdefault(symbol, {})
@@ -362,12 +365,20 @@ class GatewayApi(BitfinexApi):
             
             if len(l) > 3:
                 for price, count, amount in l:
+                    price = float(price)
+                    count = int(count)
+                    amount = float(amount)
+                    
                     if amount > 0:
                         bid[price] = amount
                     else:
                         ask[price] = -amount
             else:
                 price, count, amount = l
+                price = float(price)
+                count = int(count)
+                amount = float(amount)                
+                
                 if not count:
                     if price in bid:
                         del bid[price]
@@ -381,7 +392,7 @@ class GatewayApi(BitfinexApi):
             
             # BID
             bidPriceList = bid.keys()
-            bidPriceList.sort()
+            bidPriceList.sort(reverse=True)
             
             tick.bidPrice1 = bidPriceList[0]
             tick.bidPrice2 = bidPriceList[1]
@@ -398,7 +409,6 @@ class GatewayApi(BitfinexApi):
             # ASK
             askPriceList = ask.keys()
             askPriceList.sort()
-            askPriceList.reverse()
             
             tick.askPrice1 = askPriceList[0]
             tick.askPrice2 = askPriceList[1]
